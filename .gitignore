@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Farm: per-account profiles and local emulator screenshots
+profiles/
+tests/fixtures/ldplayer/
