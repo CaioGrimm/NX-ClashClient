@@ -125,3 +125,15 @@ def test_is_connected():
         assert dev.is_connected()
     with mock.patch("subprocess.run", return_value=_proc(b"", 1)):
         assert not dev.is_connected()
+
+
+def test_default_adb_path(monkeypatch, tmp_path):
+    from src.device import adb_device
+    monkeypatch.setenv("ADB_PATH", "/custom/adb")
+    assert adb_device.default_adb_path() == "/custom/adb"
+    monkeypatch.delenv("ADB_PATH")
+    (tmp_path / "ldconsole.exe").write_text("")
+    monkeypatch.setattr("src.emulators.ldplayer.find_ldconsole", lambda: str(tmp_path / "ldconsole.exe"))
+    assert adb_device.default_adb_path() == "adb"
+    (tmp_path / "adb.exe").write_text("")
+    assert adb_device.default_adb_path() == str(tmp_path / "adb.exe")

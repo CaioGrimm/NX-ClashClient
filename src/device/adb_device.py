@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 import time
@@ -14,13 +15,27 @@ class AdbError(RuntimeError):
     pass
 
 
+def default_adb_path() -> str:
+    """ADB_PATH if set, else LDPlayer's bundled adb.exe, else `adb` from PATH.
+
+    Two adb versions on one machine keep restarting each other's server, so on
+    the LDPlayer host prefer the adb.exe that ships with it.
+    """
+    env = os.environ.get("ADB_PATH")
+    if env:
+        return env
+    from src.emulators.ldplayer import find_ldconsole
+    bundled = os.path.join(os.path.dirname(find_ldconsole()), "adb.exe")
+    return bundled if os.path.exists(bundled) else "adb"
+
+
 class AdbDevice(Device):
     """Device backed by the `adb` binary (LDPlayer, Waydroid, physical phones...)."""
 
-    def __init__(self, serial: str, adb_path: str = "adb", timeout: float = 10.0,
+    def __init__(self, serial: str, adb_path: str | None = None, timeout: float = 10.0,
                  landscape: bool = True, package: str = COC_PACKAGE, retries: int = 1):
         self.serial = serial
-        self.adb_path = adb_path
+        self.adb_path = adb_path or default_adb_path()
         self.timeout = timeout
         self.landscape = landscape
         self.package = package
@@ -130,8 +145,8 @@ def parse_wm_size(output: str, landscape: bool = True) -> tuple[int, int]:
     return w, h
 
 
-def list_devices(adb_path: str = "adb") -> list[str]:
-    res = subprocess.run([adb_path, "devices"], capture_output=True, text=True, timeout=10)
+def list_devices(adb_path: str | None = None) -> list[str]:
+    res = subprocess.run([adb_path or default_adb_path(), "devices"], capture_output=True, text=True, timeout=10)
     serials = []
     for line in res.stdout.splitlines()[1:]:
         parts = line.split()

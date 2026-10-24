@@ -2,7 +2,25 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-DEFAULT_LDCONSOLE = os.environ.get("LDCONSOLE_PATH", r"C:\LDPlayer\LDPlayer9\ldconsole.exe")
+_LDCONSOLE_CANDIDATES = [
+    rf"{drive}:\{folder}\ldconsole.exe"
+    for drive in "CDE"
+    for folder in (r"LDPlayer\LDPlayer9", "LDPlayer9", r"Program Files\LDPlayer\LDPlayer9")
+]
+
+
+def find_ldconsole() -> str:
+    """LDCONSOLE_PATH if set, else the first standard install location that exists."""
+    env = os.environ.get("LDCONSOLE_PATH")
+    if env:
+        return env
+    for path in _LDCONSOLE_CANDIDATES:
+        if os.path.exists(path):
+            return path
+    return _LDCONSOLE_CANDIDATES[0]
+
+
+DEFAULT_LDCONSOLE = find_ldconsole()
 BASE_ADB_PORT = 5555
 
 

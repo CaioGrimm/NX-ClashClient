@@ -18,7 +18,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ldconsole", default=DEFAULT_LDCONSOLE)
     ap.add_argument("--adb-host", default="127.0.0.1")
-    ap.add_argument("--adb", default="adb")
+    ap.add_argument("--adb", help="adb binary (default: ADB_PATH, LDPlayer adb.exe, then PATH)")
     args = ap.parse_args()
 
     if os.path.exists(args.ldconsole):

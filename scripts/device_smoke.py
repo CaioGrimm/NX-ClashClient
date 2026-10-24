@@ -16,7 +16,7 @@ from src.device.adb_device import AdbDevice
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("serial")
-    ap.add_argument("--adb", default="adb")
+    ap.add_argument("--adb", help="adb binary (default: ADB_PATH, LDPlayer adb.exe, then PATH)")
     ap.add_argument("--out", default="smoke_screenshot.png")
     ap.add_argument("--tap", nargs=2, type=float, metavar=("X_REL", "Y_REL"))
     args = ap.parse_args()

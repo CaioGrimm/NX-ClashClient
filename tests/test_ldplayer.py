@@ -50,3 +50,14 @@ def test_ldplayer_commands():
         ld.quit(2)
         run.assert_called_with(["ldconsole.exe", "quit", "--index", "2"], capture_output=True, timeout=30.0)
     assert ld.serial(2) == "10.0.0.2:5559"
+
+
+def test_find_ldconsole(monkeypatch, tmp_path):
+    from src.emulators import ldplayer
+    monkeypatch.setenv("LDCONSOLE_PATH", "X:/ld/ldconsole.exe")
+    assert ldplayer.find_ldconsole() == "X:/ld/ldconsole.exe"
+    monkeypatch.delenv("LDCONSOLE_PATH")
+    exe = tmp_path / "ldconsole.exe"
+    exe.write_text("")
+    monkeypatch.setattr(ldplayer, "_LDCONSOLE_CANDIDATES", ["/nope/ldconsole.exe", str(exe)])
+    assert ldplayer.find_ldconsole() == str(exe)

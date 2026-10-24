@@ -66,7 +66,7 @@ class SessionManager:
         self.profiles[profile.name] = profile
 
     @staticmethod
-    def scan(ldconsole: str | None = None, adb_host: str = "127.0.0.1", adb_path: str = "adb") -> list[dict]:
+    def scan(ldconsole: str | None = None, adb_host: str = "127.0.0.1", adb_path: str | None = None) -> list[dict]:
         """Running LDPlayer instances if ldconsole is available, else `adb devices`."""
         from src.emulators.ldplayer import DEFAULT_LDCONSOLE, LDPlayer
         ldconsole = ldconsole or DEFAULT_LDCONSOLE
