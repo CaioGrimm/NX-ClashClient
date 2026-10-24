@@ -1,0 +1,342 @@
+"""Farm loop for one account, as an explicit state machine over a Device."""
+import enum
+import random
+import threading
+import time
+import traceback
+from dataclasses import dataclass
+
+from src.device.base import Device
+from src.farm import layout
+from src.farm.profile import Profile
+
+KEYCODE_ESCAPE = 111
+
+
+class State(str, enum.Enum):
+    HOME = "HOME"
+    CHECK_RESOURCES = "CHECK_RESOURCES"
+    SEARCH = "SEARCH"
+    EVALUATE = "EVALUATE"
+    ATTACK = "ATTACK"
+    WAIT_END = "WAIT_END"
+    RETURN = "RETURN"
+    RECOVER = "RECOVER"
+    STOPPED = "STOPPED"
+
+
+@dataclass
+class Timings:
+    """All waits in seconds. Tests set them to ~0."""
+    after_tap: float = 1.0
+    after_reinforce: float = 2.0
+    poll: float = 0.5
+    before_loot_read: float = 1.5
+    after_next: float = 3.5
+    search_timeout: float = 60.0
+    battle_timeout: float = 180.0
+    end_screen_delay: float = 3.0
+    home_load_timeout: float = 30.0
+    after_drop: float = 0.03
+    after_select: float = 0.05
+    recover_pause: float = 2.0
+    app_restart_wait: float = 30.0
+
+
+class FarmWorker:
+    """Runs the farm loop for `profile` on `device` until stopped.
+
+    log_queue receives ("log", name, level, message) and ("status", name, dict) tuples.
+    """
+
+    def __init__(self, profile: Profile, device: Device, log_queue=None, vision=None,
+                 stop_event=None, timings: Timings | None = None, clock=time.monotonic,
+                 max_recover_attempts: int = 3, max_app_restarts: int = 2, max_loops: int | None = None):
+        self.profile = profile
+        self.device = device
+        self.log_queue = log_queue
+        self.vision = vision if vision is not None else self._default_vision(profile)
+        self.stop_event = stop_event or threading.Event()
+        self.t = timings or Timings()
+        self.clock = clock
+        self.max_recover_attempts = max_recover_attempts
+        self.max_app_restarts = max_app_restarts
+        self.max_loops = max_loops
+
+        self.state = State.HOME
+        self.loops = 0
+        self.attacks = 0
+        self.skips = 0
+        self.recover_attempts = 0
+        self.app_restarts = 0
+        self.resources: dict = {}
+        self.last_loot: dict = {}
+        self.last_error: str | None = None
+        self.stop_reason: str | None = None
+        self.started_at = None
+        self.history: list[State] = []
+        self.status: dict = {}
+
+    @staticmethod
+    def _default_vision(profile):
+        from src.farm.vision import FrameVision
+        from src.utils.roi_manager import load_rois
+        return FrameVision(load_rois() or {}, profile.ocr_engine)
+
+    # ---- plumbing --------------------------------------------------------
+
+    def log(self, msg: str, level: str = "info") -> None:
+        if self.log_queue is not None:
+            self.log_queue.put(("log", self.profile.name, level, msg))
+
+    def session_remaining(self) -> float | None:
+        if not self.profile.session_minutes or self.started_at is None:
+            return None
+        return max(0.0, self.profile.session_minutes * 60 - (self.clock() - self.started_at))
+
+    def publish(self) -> None:
+        self.status = {
+            "name": self.profile.name,
+            "label": self.profile.label,
+            "state": self.state.value,
+            "loops": self.loops,
+            "attacks": self.attacks,
+            "skips": self.skips,
+            "resources": dict(self.resources),
+            "last_loot": dict(self.last_loot),
+            "session_remaining_s": self.session_remaining(),
+            "last_error": self.last_error,
+            "stop_reason": self.stop_reason,
+            "updated_at": time.time(),
+        }
+        if self.log_queue is not None:
+            self.log_queue.put(("status", self.profile.name, self.status))
+
+    def stop(self) -> None:
+        self.stop_event.set()
+
+    @property
+    def stopping(self) -> bool:
+        return self.stop_event.is_set()
+
+    def sleep(self, seconds: float) -> bool:
+        """Interruptible sleep; returns False if a stop was requested."""
+        if seconds > 0:
+            self.stop_event.wait(seconds)
+        return not self.stop_event.is_set()
+
+    def wait_for(self, predicate, timeout: float) -> object:
+        """Poll capture() until predicate(frame) is truthy; returns the frame or None."""
+        deadline = self.clock() + timeout
+        while not self.stopping:
+            frame = self.device.capture()
+            if frame is not None and predicate(frame):
+                return frame
+            if self.clock() >= deadline:
+                return None
+            self.sleep(self.t.poll)
+        return None
+
+    def tap(self, roi: dict, wait: float = 0.0) -> bool:
+        self.device.tap_roi(roi)
+        return self.sleep(wait)
+
+    # ---- main loop -------------------------------------------------------
+
+    def run(self) -> None:
+        self.started_at = self.clock()
+        self.log(f"worker started on {getattr(self.device, 'serial', self.device)}")
+        handlers = {
+            State.HOME: self.on_home,
+            State.CHECK_RESOURCES: self.on_check_resources,
+            State.SEARCH: self.on_search,
+            State.EVALUATE: self.on_evaluate,
+            State.ATTACK: self.on_attack,
+            State.WAIT_END: self.on_wait_end,
+            State.RETURN: self.on_return,
+            State.RECOVER: self.on_recover,
+        }
+        self.publish()
+        while self.state != State.STOPPED:
+            if self.stopping:
+                self.finish("stop requested")
+                break
+            self.history.append(self.state)
+            try:
+                nxt = handlers[self.state]()
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+                self.log(f"error in {self.state.value}: {self.last_error}\n{traceback.format_exc()}", "error")
+                nxt = State.RECOVER
+                self.sleep(self.t.recover_pause)
+            if nxt == State.STOPPED or self.stopping:
+                if self.stop_reason is None:
+                    self.finish("stop requested")
+                break
+            if nxt != self.state:
+                self.log(f"{self.state.value} -> {nxt.value}", "debug")
+            self.state = nxt
+            self.publish()
+        self.log(f"worker stopped: {self.stop_reason}")
+
+    def finish(self, reason: str) -> State:
+        self.stop_reason = reason
+        self.state = State.STOPPED
+        self.publish()
+        return State.STOPPED
+
+    # ---- states ----------------------------------------------------------
+
+    def on_home(self) -> State:
+        remaining = self.session_remaining()
+        if remaining is not None and remaining <= 0:
+            return self.finish("session time reached")
+        if self.max_loops is not None and self.loops >= self.max_loops:
+            return self.finish("max loops reached")
+        if not self.profile.in_schedule():
+            return self.finish("outside schedule")
+        frame = self.device.capture()
+        if frame is None or not self.vision.is_home(frame):
+            return State.RECOVER
+        self.recover_attempts = 0
+        return State.CHECK_RESOURCES
+
+    def on_check_resources(self) -> State:
+        frame = self.device.capture()
+        if frame is None or not self.vision.is_home(frame):
+            return State.RECOVER
+        self.resources = self.vision.read_home(frame)
+        self.log(f"home resources {self.resources}")
+        return State.SEARCH
+
+    def on_search(self) -> State:
+        if not self.tap(layout.ATTACK_BUTTON, self.t.after_tap):
+            return State.STOPPED
+        if not self.tap(layout.FIND_MATCH_BUTTON, self.t.after_tap):
+            return State.STOPPED
+        if self.profile.auto_reinforce:
+            for roi in (layout.REINFORCE_MEDAL_BUTTON, layout.REINFORCE_CONFIRM_BUTTON, layout.REINFORCE_FINAL_BUTTON):
+                self.tap(roi, 0.3)
+        else:
+            self.tap(layout.SKIP_REINFORCE_BUTTON)
+        if not self.sleep(self.t.after_reinforce):
+            return State.STOPPED
+        return State.EVALUATE
+
+    def on_evaluate(self) -> State:
+        deadline = self.clock() + self.t.search_timeout
+        frame = None
+        while not self.stopping:
+            frame = self.device.capture()
+            if frame is not None and self.vision.is_home(frame):
+                self.log("back on home screen during search", "warn")
+                return State.HOME
+            if frame is not None and self.vision.match_found(frame):
+                break
+            if self.clock() >= deadline:
+                self.log("search timed out", "warn")
+                self.tap(layout.SEARCH_TIMEOUT_RETURN_BUTTON, self.t.after_reinforce)
+                return State.RECOVER
+            self.sleep(self.t.poll)
+        if self.stopping:
+            return State.STOPPED
+
+        if not self.sleep(self.t.before_loot_read):
+            return State.STOPPED
+        fresh = self.device.capture()
+        if fresh is not None:
+            frame = fresh
+        loot = self.vision.read_enemy(frame)
+        self.last_loot = loot
+        if self.profile.loot_ok(loot.get("gold", 0), loot.get("elixir", 0), loot.get("dark", 0)):
+            self.log(f"loot ok {loot}")
+            return State.ATTACK
+        self.skips += 1
+        self.log(f"loot too low {loot}, next")
+        self.tap(layout.NEXT_BUTTON, self.t.after_next)
+        return State.EVALUATE
+
+    def on_attack(self) -> State:
+        if self.profile.deploy_mode == "edge":
+            self.deploy_edge()
+        self.attacks += 1
+        return State.WAIT_END
+
+    def deploy_edge(self) -> None:
+        """Placeholder deploy: every card slot spread along the red border."""
+        for slot in range(self.profile.deploy_slots):
+            if self.stopping:
+                return
+            x, y = layout.troop_slot(slot)
+            self.device.tap(x, y)
+            self.sleep(self.t.after_select)
+            for _ in range(self.profile.drops_per_slot):
+                if self.stopping:
+                    return
+                self.device.tap(*layout.red_line_point(random.random()))
+                self.sleep(self.t.after_drop)
+
+    def on_wait_end(self) -> State:
+        frame = self.wait_for(self.vision.match_ended, self.t.battle_timeout)
+        if frame is None:
+            if self.stopping:
+                return State.STOPPED
+            self.log("battle end not detected", "warn")
+            return State.RECOVER
+        return State.RETURN
+
+    def on_return(self) -> State:
+        if not self.sleep(self.t.end_screen_delay):
+            return State.STOPPED
+        self.tap(layout.RETURN_HOME_BUTTON)
+        deadline = self.clock() + self.t.home_load_timeout
+        while not self.stopping:
+            self.sleep(self.t.poll)
+            frame = self.device.capture()
+            if frame is not None:
+                if self.vision.star_bonus_popup(frame):
+                    self.log("star bonus popup, closing")
+                    self.tap(layout.STAR_BONUS_OK_BUTTON, self.t.after_reinforce)
+                    continue
+                if self.vision.is_home(frame):
+                    self.loops += 1
+                    return State.HOME
+            if self.clock() >= deadline:
+                self.log("home village did not load", "warn")
+                return State.RECOVER
+        return State.STOPPED
+
+    def on_recover(self) -> State:
+        frame = self.device.capture()
+        if frame is not None:
+            if self.vision.is_home(frame):
+                self.recover_attempts = 0
+                return State.HOME
+            if self.vision.match_ended(frame):
+                return State.RETURN
+            if self.vision.is_battle(frame):
+                return State.EVALUATE if self.vision.match_found(frame) else State.WAIT_END
+
+        self.recover_attempts += 1
+        if self.recover_attempts > self.max_recover_attempts:
+            if self.app_restarts >= self.max_app_restarts:
+                return self.finish("recovery failed")
+            self.app_restarts += 1
+            self.recover_attempts = 0
+            self.log(f"restarting game ({self.app_restarts}/{self.max_app_restarts})", "warn")
+            self.device.stop_app()
+            self.sleep(self.t.after_tap)
+            self.device.start_app()
+            self.sleep(self.t.app_restart_wait)
+            return State.RECOVER
+
+        self.log(f"unknown screen, recovery attempt {self.recover_attempts}", "warn")
+        if (frame is not None and self.vision.reload_popup(frame)) or self.recover_attempts > 1:
+            key = getattr(self.device, "key", None)
+            if key:
+                key(KEYCODE_ESCAPE)
+        else:
+            for _ in range(layout.RECOVERY_DISMISS_TAPS):
+                self.tap(layout.RECOVERY_DISMISS_BUTTON, 0.1)
+        self.sleep(self.t.recover_pause)
+        return State.RECOVER
