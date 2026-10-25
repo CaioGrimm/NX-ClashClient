@@ -68,15 +68,19 @@ def test_battle_and_match_use_probes():
     assert v.match_found(frame) and not v.is_home(frame)
 
 
-# Local only (gitignored), captured on LDPlayer 1280x720: name -> (home?, match?, values read)
+# Local only (gitignored), captured on LDPlayer 1280x720:
+# name -> (screen, values read); screen is one of home / match / battle / end / other.
 SHOTS = {
-    "ld_3.png": (True, False, {"gold": 338, "elixir": 79, "dark": 0}),
-    "ld_home_5449.png": (True, False, {"gold": 5449, "elixir": 5170, "dark": 0}),  # leading 5 once read as S
-    "ld_search_1.png": (False, True, {"gold": 1160, "elixir": 2264, "dark": 0}),
-    "ld_search_2.png": (False, True, {"gold": 1194, "elixir": 1262, "dark": 0}),
-    "ld_search_3.png": (False, True, {"gold": 1154, "elixir": 628, "dark": 0}),
-    "ld_army.png": (False, False, None),
-    "ld_battle_menu.png": (False, False, None),
+    "ld_3.png": ("home", {"gold": 338, "elixir": 79, "dark": 0}),
+    "ld_home_5449.png": ("home", {"gold": 5449, "elixir": 5170, "dark": 0}),  # leading 5 once read as S
+    "ld_search_1.png": ("match", {"gold": 1160, "elixir": 2264, "dark": 0}),
+    "ld_search_2.png": ("match", {"gold": 1194, "elixir": 1262, "dark": 0}),
+    "ld_search_3.png": ("match", {"gold": 1154, "elixir": 628, "dark": 0}),
+    "ld_search_4.png": ("match", {"gold": 55848, "elixir": 74928, "dark": 0}),  # "55" once read as "SS"
+    "ld_battle.png": ("battle", None),
+    "ld_end_defeat.png": ("end", None),
+    "ld_army.png": ("other", None),
+    "ld_battle_menu.png": ("other", None),
 }
 
 
@@ -87,10 +91,13 @@ def test_ldplayer_screenshot(name):
         pytest.skip(f"{path} not present")
     cv2 = pytest.importorskip("cv2")
     frame = cv2.imread(str(path))
-    home, match, values = SHOTS[name]
+    screen, values = SHOTS[name]
+    home = screen == "home"
     v = FrameVision(LD_ROIS, "rapid")
     assert v.is_home(frame) == home
-    assert v.match_found(frame) == match and v.is_battle(frame) == match
+    assert v.match_found(frame) == (screen == "match")
+    assert v.is_battle(frame) == (screen in ("match", "battle"))
+    assert v.match_ended(frame) == (screen == "end")
     if values is None:
         return
     pytest.importorskip("rapidocr_onnxruntime")

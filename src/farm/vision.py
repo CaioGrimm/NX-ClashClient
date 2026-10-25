@@ -69,6 +69,9 @@ class FrameVision:
     def match_ended(self, frame) -> bool:
         if frame is None or frame.size == 0:
             return False
+        probes = self.rois.get("end_probes")
+        if probes:
+            return all(_probe_ok(frame, p) for p in probes)
         h, w = frame.shape[:2]
         for px, py in layout.MATCH_END_STAR_PROBES:
             x, y = int(px * w), int(py * h)

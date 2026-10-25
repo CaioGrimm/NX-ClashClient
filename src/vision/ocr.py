@@ -150,6 +150,15 @@ def extract_builders_rapid(image: np.ndarray) -> str:
         return "?/?"
     except: return "?/?"
 
+# The crops hold only digits; RapidOCR sometimes returns look-alike letters ("SS 848").
+_DIGIT_LOOKALIKES = str.maketrans({"S": "5", "s": "5", "O": "0", "o": "0", "D": "0", "I": "1",
+                                   "l": "1", "|": "1", "B": "8", "Z": "2", "z": "2"})
+
+
+def _digits(text: str) -> str:
+    return re.sub(r'\D', '', text.translate(_DIGIT_LOOKALIKES))
+
+
 def extract_all_rapid(crops: list[np.ndarray]) -> list[int]:
     if rapid_engine is None: return [0] * len(crops)
     results =[]
@@ -161,10 +170,10 @@ def extract_all_rapid(crops: list[np.ndarray]) -> list[int]:
             # margin the recognizer also reads a leading "5" as "S".
             padded = cv2.copyMakeBorder(c, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=(255, 255, 255))
             res, _ = rapid_engine(padded, use_det=False, use_cls=False)
-            cleaned = re.sub(r'\D', '', " ".join([item[0] for item in res])) if res else ""
+            cleaned = _digits(" ".join([item[0] for item in res])) if res else ""
             if not cleaned:
                 res, _ = rapid_engine(c)
-                cleaned = re.sub(r'\D', '', " ".join([item[1] for item in res])) if res else ""
+                cleaned = _digits(" ".join([item[1] for item in res])) if res else ""
             results.append(int(cleaned) if cleaned else 0)
         except: results.append(0)
     return results
