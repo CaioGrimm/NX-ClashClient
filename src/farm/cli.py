@@ -50,6 +50,14 @@ def build_parser() -> argparse.ArgumentParser:
     new.add_argument("--schedule", action="append", default=[], metavar="HH:MM-HH:MM")
     new.add_argument("--disabled", action="store_true")
     new.add_argument("--dry-run", action="store_true", help="read resources and stop, never tap")
+    new.add_argument("--no-stop-when-full", dest="stop_when_full", action="store_false")
+    new.add_argument("--capacity-gold", type=int, default=0)
+    new.add_argument("--capacity-elixir", type=int, default=0)
+    new.add_argument("--auto-upgrade", action="store_true", help="spend full storages on builder upgrades")
+    new.add_argument("--auto-walls", action="store_true", help="allow walls in the spend phase")
+    new.add_argument("--reserve-gold", dest="upgrade_reserve_gold", type=int, default=0)
+    new.add_argument("--reserve-elixir", dest="upgrade_reserve_elixir", type=int, default=0)
+    new.add_argument("--upgrade-priority", action="append", default=[], metavar="NAME")
     new.add_argument("--force", action="store_true", help="overwrite an existing profile")
     for action in ("show", "enable", "disable"):
         psub.add_parser(action).add_argument("name")
@@ -142,7 +150,11 @@ def cmd_profiles(args, out, **_):
                     emulator_index=args.emulator_index, adb_serial=args.adb_serial, adb_host=args.adb_host,
                     ocr_engine=args.ocr_engine, min_gold=args.min_gold, min_elixir=args.min_elixir,
                     min_dark=args.min_dark, deploy_mode=args.deploy_mode, auto_reinforce=args.auto_reinforce,
-                    session_minutes=args.session_minutes, schedule=args.schedule, dry_run=args.dry_run)
+                    session_minutes=args.session_minutes, schedule=args.schedule, dry_run=args.dry_run,
+                    stop_when_full=args.stop_when_full, capacity_gold=args.capacity_gold,
+                    capacity_elixir=args.capacity_elixir, auto_upgrade=args.auto_upgrade,
+                    auto_walls=args.auto_walls, upgrade_reserve_gold=args.upgrade_reserve_gold,
+                    upgrade_reserve_elixir=args.upgrade_reserve_elixir, upgrade_priority=args.upgrade_priority)
         print(f"Saved {p.save(args.profiles_dir)}", file=out)
         return 0
 

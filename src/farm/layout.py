@@ -23,6 +23,12 @@ SKIP_REINFORCE_BUTTON = _pt(0.883, 0.889)  # "Atacar!" on the army screen
 NEXT_BUTTON = {"x": 0.865, "y": 0.681, "w": 0.09, "h": 0.06}
 SEARCH_TIMEOUT_RETURN_BUTTON = _pt(0.072, 0.746)  # "Encerrar batalha"
 
+# ── Builder panel / upgrades (LDPlayer 1280x720) ─────────────────────
+BUILDER_MENU_BUTTON = _pt(0.934, 0.889)     # "Construir"
+BUILDER_PANEL_CLOSE = _pt(0.983, 0.031)
+UPGRADE_CONFIRM_BUTTON = _pt(0.701, 0.875)  # green "Confirmar" paid with resources (not the hammer item)
+UPGRADE_DIALOG_CLOSE = _pt(0.883, 0.076)
+
 # ── Battle end ────────────────────────────────────────────────────────
 RETURN_HOME_BUTTON = _pt(0.505, 0.850)
 STAR_BONUS_OK_BUTTON = _pt(0.50, 0.83)

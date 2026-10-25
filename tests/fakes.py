@@ -121,6 +121,15 @@ class FakeVision:
     def read_home(self, f):
         return dict(self.home)
 
+    def storage_full(self, f):
+        return {"gold": False, "elixir": False}
+
+    def builder_panel_open(self, f):
+        return False
+
+    def upgrade_dialog_open(self, f):
+        return False
+
     def troop_cards(self, f, max_cards=8):
         return [layout.troop_slot(i) for i in range(max_cards)]
 

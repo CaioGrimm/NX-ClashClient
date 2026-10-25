@@ -32,6 +32,7 @@ class DryRunDevice:
 class State(str, enum.Enum):
     HOME = "HOME"
     CHECK_RESOURCES = "CHECK_RESOURCES"
+    SPEND = "SPEND"
     SEARCH = "SEARCH"
     EVALUATE = "EVALUATE"
     ATTACK = "ATTACK"
@@ -97,6 +98,8 @@ class FarmWorker:
         self.stop_reason: str | None = None
         self.started_at = None
         self.history: list[State] = []
+        self.upgrades_done: list[dict] = []
+        self._spend_tried = False  # one spend phase per farm loop
         self.status: dict = {}
 
     @staticmethod
@@ -125,6 +128,7 @@ class FarmWorker:
             "skips": self.skips,
             "resources": dict(self.resources),
             "last_loot": dict(self.last_loot),
+            "upgrades": list(self.upgrades_done),
             "session_remaining_s": self.session_remaining(),
             "last_error": self.last_error,
             "stop_reason": self.stop_reason,
@@ -170,6 +174,7 @@ class FarmWorker:
         handlers = {
             State.HOME: self.on_home,
             State.CHECK_RESOURCES: self.on_check_resources,
+            State.SPEND: self.on_spend,
             State.SEARCH: self.on_search,
             State.EVALUATE: self.on_evaluate,
             State.ATTACK: self.on_attack,
@@ -230,7 +235,73 @@ class FarmWorker:
         self.log(f"home resources {self.resources}")
         if self.dry_run:
             return self.finish("dry run: resources read")
+        full = self.full_storages(frame)
+        if any(full.values()):
+            self.log(f"full storages {[k for k, v in full.items() if v]}")
+            if self.profile.auto_upgrade and not self._spend_tried:
+                return State.SPEND
+            if self.profile.stop_when_full and all(full.values()):
+                return self.finish("storages full")
         return State.SEARCH
+
+    def full_storages(self, frame) -> dict:
+        full = dict(self.vision.storage_full(frame))
+        for k, cap in (("gold", self.profile.capacity_gold), ("elixir", self.profile.capacity_elixir)):
+            if cap and self.resources.get(k, 0) >= cap:
+                full[k] = True
+        return full
+
+    def _close_builder_panel(self) -> None:
+        frame = self.device.capture()
+        if frame is not None and self.vision.upgrade_dialog_open(frame):
+            self.tap(layout.UPGRADE_DIALOG_CLOSE, self.t.after_tap)
+            frame = self.device.capture()
+        if frame is not None and self.vision.builder_panel_open(frame):
+            self.tap(layout.BUILDER_PANEL_CLOSE, self.t.after_tap)
+
+    def on_spend(self) -> State:
+        """Spend storages on builder upgrades; each tap is checked on a fresh capture."""
+        from src.farm import upgrades
+        self._spend_tried = True
+        p = self.profile
+        reserve = {"gold": p.upgrade_reserve_gold, "elixir": p.upgrade_reserve_elixir}
+        done = 0
+        for _ in range(p.max_upgrades):
+            if self.stopping:
+                return State.STOPPED
+            frame = self.device.capture()
+            full = self.full_storages(frame) if frame is not None else {}
+            self.tap(layout.BUILDER_MENU_BUTTON, self.t.after_tap)
+            frame = self.device.capture()
+            if frame is None or not self.vision.builder_panel_open(frame):
+                self.log("builder panel did not open", "warn")
+                break
+            if self.vision.free_builders(frame) == 0:
+                self.log("no free builder")
+                break
+            choice = upgrades.choose_upgrade(self.vision.read_upgrades(frame), self.resources, reserve, full,
+                                             p.upgrade_priority, p.auto_walls)
+            if choice is None:
+                self.log("no affordable upgrade")
+                break
+            self.tap({"x": choice.x, "y": choice.y, "w": 0.0, "h": 0.0}, self.t.after_tap)
+            frame = self.device.capture()
+            if frame is None or not self.vision.upgrade_dialog_open(frame):
+                self.log(f"upgrade dialog for {choice.name} did not open", "warn")
+                break
+            self.tap(layout.UPGRADE_CONFIRM_BUTTON, self.t.after_tap)
+            frame = self.device.capture()
+            if frame is not None and self.vision.upgrade_dialog_open(frame):
+                self.log(f"upgrade of {choice.name} not confirmed", "warn")
+                break
+            self.resources[choice.currency] = self.resources.get(choice.currency, 0) - choice.cost
+            self.upgrades_done.append({"name": choice.name, "cost": choice.cost, "currency": choice.currency})
+            self.log(f"upgraded {choice.name} for {choice.cost} {choice.currency}")
+            done += 1
+            self._close_builder_panel()
+        self._close_builder_panel()
+        self.log(f"spend phase: {done} upgrade(s)")
+        return State.HOME
 
     def on_search(self) -> State:
         if not self.tap(layout.ATTACK_BUTTON, self.t.after_tap):
@@ -379,6 +450,7 @@ class FarmWorker:
                     continue
                 if self.vision.is_home(frame):
                     self.loops += 1
+                    self._spend_tried = False
                     return State.HOME
             if self.clock() >= deadline:
                 self.log("home village did not load", "warn")

@@ -41,6 +41,16 @@ class Profile:
     auto_reinforce: bool = False
     session_minutes: int = 0  # 0 = no limit
     dry_run: bool = False  # read the screen and stop, never tap
+    # Full storages: spend them on builder upgrades (auto_upgrade), then stop if still full.
+    stop_when_full: bool = True
+    capacity_gold: int = 0    # 0 = detect a full storage from its bar
+    capacity_elixir: int = 0
+    auto_upgrade: bool = False
+    auto_walls: bool = False
+    upgrade_reserve_gold: int = 0
+    upgrade_reserve_elixir: int = 0
+    upgrade_priority: list[str] = field(default_factory=list)  # name substrings tried first
+    max_upgrades: int = 2     # per spend phase
     # Daily windows "HH:MM-HH:MM" in local time; empty = always. Windows may wrap midnight.
     schedule: list[str] = field(default_factory=list)
 
@@ -61,7 +71,9 @@ class Profile:
             errors.append(f"ocr_engine {self.ocr_engine!r} not in {sorted(OCR_ENGINES)}")
         if self.deploy_mode not in DEPLOY_MODES:
             errors.append(f"deploy_mode {self.deploy_mode!r} not in {sorted(DEPLOY_MODES)}")
-        for attr in ("min_gold", "min_elixir", "min_dark", "session_minutes", "deploy_slots", "drops_per_slot"):
+        for attr in ("min_gold", "min_elixir", "min_dark", "session_minutes", "deploy_slots", "drops_per_slot",
+                     "capacity_gold", "capacity_elixir", "upgrade_reserve_gold", "upgrade_reserve_elixir",
+                     "max_upgrades"):
             v = getattr(self, attr)
             if not isinstance(v, int) or isinstance(v, bool) or v < 0:
                 errors.append(f"{attr} must be an int >= 0, got {v!r}")
@@ -69,6 +81,8 @@ class Profile:
             errors.append(f"emulator_index must be an int >= 0, got {self.emulator_index!r}")
         if self.emulator_index is None and not self.adb_serial:
             errors.append("either emulator_index or adb_serial is required")
+        if not isinstance(self.upgrade_priority, list) or not all(isinstance(n, str) for n in self.upgrade_priority):
+            errors.append("upgrade_priority must be a list of strings")
         if not isinstance(self.schedule, list):
             errors.append("schedule must be a list of 'HH:MM-HH:MM' strings")
         else:

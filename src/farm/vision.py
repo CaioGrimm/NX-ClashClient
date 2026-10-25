@@ -142,6 +142,28 @@ class FrameVision:
             points.append((rx, ry))
         return points
 
+    # ---- storages / builder panel -------------------------------------------
+
+    def storage_full(self, frame) -> dict:
+        probes = self.rois.get("full_probes") or {}
+        return {k: frame is not None and k in probes and _probe_ok(frame, probes[k]) for k in ("gold", "elixir")}
+
+    def builder_panel_open(self, frame) -> bool:
+        probes = self.rois.get("panel_probes")
+        return bool(probes) and frame is not None and all(_probe_ok(frame, p) for p in probes)
+
+    def upgrade_dialog_open(self, frame) -> bool:
+        probes = self.rois.get("dialog_probes")
+        return bool(probes) and frame is not None and all(_probe_ok(frame, p) for p in probes)
+
+    def read_upgrades(self, frame) -> list:
+        from src.farm import upgrades
+        return upgrades.read_panel(frame)
+
+    def free_builders(self, frame) -> int | None:
+        from src.farm import upgrades
+        return upgrades.free_builders(frame)
+
     def star_bonus_popup(self, frame) -> bool:
         return frame is not None and _pixel_close(frame, layout.STAR_BONUS_PROBE,
                                                   layout.STAR_BONUS_BGR, layout.STAR_BONUS_TOL)
