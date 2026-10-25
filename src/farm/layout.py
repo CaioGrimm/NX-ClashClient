@@ -17,11 +17,11 @@ FIND_MATCH_BUTTON = {"x": 0.14, "y": 0.70, "w": 0.15, "h": 0.06}
 REINFORCE_MEDAL_BUTTON = _pt(0.802, 0.774)
 REINFORCE_CONFIRM_BUTTON = _pt(0.675, 0.666)
 REINFORCE_FINAL_BUTTON = _pt(0.850, 0.850)
-SKIP_REINFORCE_BUTTON = _pt(0.85, 0.85)
+SKIP_REINFORCE_BUTTON = _pt(0.883, 0.889)  # "Atacar!" on the army screen
 
 # ── Search / evaluate ─────────────────────────────────────────────────
-NEXT_BUTTON = {"x": 0.870, "y": 0.743, "w": 0.10, "h": 0.06}
-SEARCH_TIMEOUT_RETURN_BUTTON = _pt(0.058, 0.892)
+NEXT_BUTTON = {"x": 0.865, "y": 0.681, "w": 0.09, "h": 0.06}
+SEARCH_TIMEOUT_RETURN_BUTTON = _pt(0.072, 0.746)  # "Encerrar batalha"
 
 # ── Battle end ────────────────────────────────────────────────────────
 RETURN_HOME_BUTTON = _pt(0.505, 0.850)

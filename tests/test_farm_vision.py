@@ -55,14 +55,44 @@ def test_load_rois_for_adb_device():
     assert "home_probes" not in load_rois_for(object())
 
 
-@pytest.mark.skipif(not LD_SHOT.exists(), reason="LDPlayer screenshot fixture not present")
-def test_ldplayer_screenshot():
+def test_battle_and_match_use_probes():
+    v = FrameVision(LD_ROIS)
+    frame = np.zeros((720, 1280, 3), np.uint8)
+    assert not v.is_battle(frame) and not v.match_found(frame)
+    for p in LD_ROIS["battle_probes"]:
+        paint(frame, p)
+    assert v.is_battle(frame) and not v.match_found(frame)
+    for p in LD_ROIS["next_probes"]:
+        paint(frame, p)
+    assert v.match_found(frame) and not v.is_home(frame)
+
+
+# Local only (gitignored), captured on LDPlayer 1280x720: name -> (home?, match?, values read)
+SHOTS = {
+    "ld_3.png": (True, False, {"gold": 338, "elixir": 79, "dark": 0}),
+    "ld_search_1.png": (False, True, {"gold": 1160, "elixir": 2264, "dark": 0}),
+    "ld_search_2.png": (False, True, {"gold": 1194, "elixir": 1262, "dark": 0}),
+    "ld_search_3.png": (False, True, {"gold": 1154, "elixir": 628, "dark": 0}),
+    "ld_army.png": (False, False, None),
+    "ld_battle_menu.png": (False, False, None),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SHOTS))
+def test_ldplayer_screenshot(name):
+    path = LD_SHOT.parent / name
+    if not path.exists():
+        pytest.skip(f"{path} not present")
     cv2 = pytest.importorskip("cv2")
+    frame = cv2.imread(str(path))
+    home, match, values = SHOTS[name]
+    v = FrameVision(LD_ROIS, "rapid")
+    assert v.is_home(frame) == home
+    assert v.match_found(frame) == match and v.is_battle(frame) == match
+    if values is None:
+        return
     pytest.importorskip("rapidocr_onnxruntime")
     from importlib.metadata import version
     if tuple(int(n) for n in version("rapidocr_onnxruntime").split(".")[:2]) < (1, 4):
         pytest.skip("rapidocr_onnxruntime < 1.4 (the last release for Python 3.13) reads nothing on these crops")
-    frame = cv2.imread(str(LD_SHOT))
-    v = FrameVision(LD_ROIS, "rapid")
-    assert v.is_home(frame)
-    assert v.read_home(frame) == {"gold": 338, "elixir": 79, "dark": 0}
+    assert (v.read_home(frame) if home else v.read_enemy(frame)) == values

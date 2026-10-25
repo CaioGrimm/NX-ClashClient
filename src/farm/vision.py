@@ -51,10 +51,20 @@ class FrameVision:
         return is_main_screen(frame, self.rois["main_screen_i"])
 
     def is_battle(self, frame) -> bool:
-        return frame is not None and is_battle_screen(frame)
+        if frame is None:
+            return False
+        probes = self.rois.get("battle_probes")
+        if probes:
+            return all(_probe_ok(frame, p) for p in probes)
+        return is_battle_screen(frame)
 
     def match_found(self, frame) -> bool:
-        return frame is not None and check_match_found(frame, layout.NEXT_BUTTON)
+        if frame is None:
+            return False
+        probes = self.rois.get("next_probes")
+        if probes:
+            return self.is_battle(frame) and all(_probe_ok(frame, p) for p in probes)
+        return check_match_found(frame, layout.NEXT_BUTTON)
 
     def match_ended(self, frame) -> bool:
         if frame is None or frame.size == 0:

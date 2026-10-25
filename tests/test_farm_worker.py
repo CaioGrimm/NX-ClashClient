@@ -63,7 +63,8 @@ def test_low_loot_clicks_next_then_attacks():
     w.run()
     assert w.skips == 2 and w.attacks == 1
     assert w.history.count(State.EVALUATE) == 3
-    next_center = tuple(round(v, 3) for v in (0.870 + 0.05, 0.743 + 0.03))
+    nb = layout.NEXT_BUTTON
+    next_center = tuple(round(v, 3) for v in (nb["x"] + nb["w"] / 2, nb["y"] + nb["h"] / 2))
     assert dev.taps.count(next_center) == 2
     assert w.last_loot["gold"] == 600_000
 
@@ -82,7 +83,8 @@ def test_search_timeout_goes_to_recover():
     dev = FakeDevice(screen="army")
     w, _ = make(device=dev, clock=FakeClock(), timings=Timings(**{**FAST.__dict__, "search_timeout": 3}))
     assert w.on_evaluate() == State.RECOVER
-    assert dev.taps[-1] == (0.058, 0.892)
+    ret = layout.SEARCH_TIMEOUT_RETURN_BUTTON
+    assert dev.taps[-1] == (ret["x"], ret["y"])
 
 
 def test_home_during_search_restarts_cycle():
