@@ -156,12 +156,14 @@ def extract_all_rapid(crops: list[np.ndarray]) -> list[int]:
     for c in crops:
         try:
             if len(c.shape) == 2: c = cv2.cvtColor(c, cv2.COLOR_GRAY2BGR)
-            res, _ = rapid_engine(c)
-            if res:
-                text = " ".join([item[1] for item in res])
-                cleaned = re.sub(r'\D', '', text)
-                results.append(int(cleaned) if cleaned else 0)
-            else: results.append(0)
+            # Crops are single lines: recognition alone is steadier than the
+            # detector, which misses digits touching the crop border.
+            res, _ = rapid_engine(c, use_det=False, use_cls=False)
+            cleaned = re.sub(r'\D', '', " ".join([item[0] for item in res])) if res else ""
+            if not cleaned:
+                res, _ = rapid_engine(c)
+                cleaned = re.sub(r'\D', '', " ".join([item[1] for item in res])) if res else ""
+            results.append(int(cleaned) if cleaned else 0)
         except: results.append(0)
     return results
 

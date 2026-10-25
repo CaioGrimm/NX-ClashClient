@@ -1,4 +1,7 @@
 """Screen classification and OCR on plain frames, reusing src/vision/*."""
+import json
+from pathlib import Path
+
 import numpy as np
 
 from src.farm import layout
@@ -7,11 +10,28 @@ from src.vision.detection import check_match_found, crop_roi, is_battle_screen, 
 HOME_KEYS = ("gold", "elixir", "dark_elixir")
 ENEMY_KEYS = ("enemy_gold", "enemy_elixir", "enemy_dark_elixir")
 
+# Full-screen `screencap` frames (AdbDevice) are laid out differently from the
+# window captures config/rois.json was calibrated on.
+LDPLAYER_ROIS_FILE = Path("config/rois_ldplayer.json")
+
 
 def _pixel_close(frame: np.ndarray, point: tuple[float, float], bgr: tuple, tol: int) -> bool:
     h, w = frame.shape[:2]
     x, y = min(int(point[0] * w), w - 1), min(int(point[1] * h), h - 1)
     return bool(np.all(np.abs(frame[y, x].astype(int) - np.array(bgr)) <= tol))
+
+
+def _probe_ok(frame: np.ndarray, probe: dict) -> bool:
+    return _pixel_close(frame, (probe["x"], probe["y"]), tuple(probe["bgr"]), probe["tol"])
+
+
+def load_rois_for(device) -> dict:
+    """rois_ldplayer.json for adb devices (when present), else the legacy rois.json."""
+    from src.device.adb_device import AdbDevice
+    from src.utils.roi_manager import load_rois
+    if isinstance(device, AdbDevice) and LDPLAYER_ROIS_FILE.exists():
+        return json.loads(LDPLAYER_ROIS_FILE.read_text())
+    return load_rois() or {}
 
 
 class FrameVision:
@@ -23,7 +43,12 @@ class FrameVision:
         self._extract = None
 
     def is_home(self, frame) -> bool:
-        return frame is not None and is_main_screen(frame, self.rois["main_screen_i"])
+        if frame is None:
+            return False
+        probes = self.rois.get("home_probes")
+        if probes:
+            return all(_probe_ok(frame, p) for p in probes)
+        return is_main_screen(frame, self.rois["main_screen_i"])
 
     def is_battle(self, frame) -> bool:
         return frame is not None and is_battle_screen(frame)
@@ -69,7 +94,11 @@ class FrameVision:
         return [int(v) if isinstance(v, (int, float)) else 0 for v in values]
 
     def read_home(self, frame) -> dict:
-        return dict(zip(("gold", "elixir", "dark"), self._read(frame, HOME_KEYS)))
+        res = dict(zip(("gold", "elixir", "dark"), self._read(frame, HOME_KEYS)))
+        gem_probe = self.rois.get("gem_row3_probe")
+        if gem_probe and _probe_ok(frame, gem_probe):
+            res["dark"] = 0  # no dark elixir yet: the third row is the gem counter
+        return res
 
     def read_enemy(self, frame) -> dict:
         return dict(zip(("gold", "elixir", "dark"), self._read(frame, ENEMY_KEYS)))

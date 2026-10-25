@@ -55,7 +55,7 @@ class FarmWorker:
         self.profile = profile
         self.device = device
         self.log_queue = log_queue
-        self.vision = vision if vision is not None else self._default_vision(profile)
+        self.vision = vision if vision is not None else self._default_vision(profile, device)
         self.stop_event = stop_event or threading.Event()
         self.t = timings or Timings()
         self.clock = clock
@@ -78,10 +78,9 @@ class FarmWorker:
         self.status: dict = {}
 
     @staticmethod
-    def _default_vision(profile):
-        from src.farm.vision import FrameVision
-        from src.utils.roi_manager import load_rois
-        return FrameVision(load_rois() or {}, profile.ocr_engine)
+    def _default_vision(profile, device):
+        from src.farm.vision import FrameVision, load_rois_for
+        return FrameVision(load_rois_for(device), profile.ocr_engine)
 
     # ---- plumbing --------------------------------------------------------
 
