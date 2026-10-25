@@ -69,3 +69,15 @@ def test_profiles_new_dry_run(tmp_path):
     assert cli.main(["--profiles-dir", str(tmp_path), "profiles", "new", "acc1", "--index", "0", "--dry-run"],
                     out=out) == 0
     assert Profile.load("acc1", tmp_path).dry_run
+
+
+def test_test_deploy_drops_one_troop_and_records(tmp_path):
+    dev = FakeDevice("home", battle_frames=3)
+    profile = Profile(name="acc1", emulator_index=0, deploy_mode="test")
+    w, _ = make(profile=profile, device=dev, capture_dir=tmp_path)
+    w.run()
+    deploy_taps = dev.taps[dev.taps.index((0.883, 0.889)) + 1:]
+    assert len(deploy_taps) == 2  # one card, one drop; nothing after (no return home)
+    assert w.attacks == 1 and w.stop_reason == "test deploy: frames recorded"
+    frames = list((tmp_path / "acc1").glob("test_*/*.png"))
+    assert len(frames) >= 3

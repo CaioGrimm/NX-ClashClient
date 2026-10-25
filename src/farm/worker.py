@@ -5,6 +5,7 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 
 from src.device.base import Device
 from src.farm import layout
@@ -56,6 +57,8 @@ class Timings:
     after_select: float = 0.05
     recover_pause: float = 2.0
     app_restart_wait: float = 30.0
+    record_every: float = 3.0
+    record_extra: float = 30.0
 
 
 class FarmWorker:
@@ -67,8 +70,9 @@ class FarmWorker:
     def __init__(self, profile: Profile, device: Device, log_queue=None, vision=None,
                  stop_event=None, timings: Timings | None = None, clock=time.monotonic,
                  max_recover_attempts: int = 3, max_app_restarts: int = 2, max_loops: int | None = None,
-                 dry_run: bool | None = None):
+                 dry_run: bool | None = None, capture_dir: Path | str = "captures"):
         self.profile = profile
+        self.capture_dir = Path(capture_dir) / profile.name
         self.dry_run = profile.dry_run if dry_run is None else dry_run
         # Belt and braces: the dry-run states never tap, and the wrapper drops any input anyway.
         self.device = DryRunDevice(device) if self.dry_run else device
@@ -285,24 +289,73 @@ class FarmWorker:
     def on_attack(self) -> State:
         if self.profile.deploy_mode == "edge":
             self.deploy_edge()
+        elif self.profile.deploy_mode == "test":
+            if not self.deploy_test():
+                return self.finish("test deploy: no troop card or deploy point found")
         self.attacks += 1
         return State.WAIT_END
 
+    def _deploy_targets(self):
+        frame = self.device.capture()
+        cards = self.vision.troop_cards(frame, self.profile.deploy_slots)
+        points = self.vision.deploy_points(frame)
+        self.log(f"deploy: {len(cards)} troop cards, {len(points)} deploy points")
+        return cards, points
+
     def deploy_edge(self) -> None:
-        """Placeholder deploy: every card slot spread along the red border."""
-        for slot in range(self.profile.deploy_slots):
+        """Every troop card spread over points outside the deploy border."""
+        cards, points = self._deploy_targets()
+        if not points:
+            points = [layout.red_line_point(random.random()) for _ in range(24)]
+        for x, y in cards:
             if self.stopping:
                 return
-            x, y = layout.troop_slot(slot)
             self.device.tap(x, y)
             self.sleep(self.t.after_select)
             for _ in range(self.profile.drops_per_slot):
                 if self.stopping:
                     return
-                self.device.tap(*layout.red_line_point(random.random()))
+                self.device.tap(*random.choice(points))
                 self.sleep(self.t.after_drop)
 
+    def deploy_test(self) -> bool:
+        """One troop of the first card, at the deploy point nearest the screen center."""
+        cards, points = self._deploy_targets()
+        if not cards or not points:
+            return False
+        point = min(points, key=lambda p: (p[0] - 0.5) ** 2 + (p[1] - 0.5) ** 2)
+        self.device.tap(*cards[0])
+        self.sleep(self.t.after_select)
+        self.device.tap(*point)
+        self.log(f"test deploy: card {cards[0]} at {point}")
+        return True
+
+    def record_until_end(self) -> State:
+        """Test mode: save a frame every `record_every` s until the end screen, then stop. No taps."""
+        import cv2
+        out = self.capture_dir / f"test_{time.strftime('%Y%m%d_%H%M%S')}"
+        out.mkdir(parents=True, exist_ok=True)
+        deadline = self.clock() + self.t.battle_timeout + self.t.record_extra
+        ended_at = None
+        n = 0
+        while not self.stopping and self.clock() < deadline:
+            frame = self.device.capture()
+            if frame is not None:
+                cv2.imwrite(str(out / f"{n:03d}.png"), frame)
+                n += 1
+                if ended_at is None and self.vision.match_ended(frame):
+                    ended_at = self.clock()
+                    self.log(f"end screen detected at frame {n - 1}")
+            if ended_at is not None and self.clock() - ended_at >= self.t.record_extra:
+                break
+            self.sleep(self.t.record_every)
+        self.log(f"test deploy: {n} frames saved to {out}")
+        return self.finish("test deploy: frames recorded" if ended_at is not None
+                           else "test deploy: end screen not detected, frames recorded")
+
     def on_wait_end(self) -> State:
+        if self.profile.deploy_mode == "test":
+            return self.record_until_end()
         frame = self.wait_for(self.vision.match_ended, self.t.battle_timeout)
         if frame is None:
             if self.stopping:

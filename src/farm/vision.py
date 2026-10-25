@@ -77,6 +77,68 @@ class FrameVision:
                 return False
         return True
 
+    # ---- deployment ------------------------------------------------------
+
+    def troop_cards(self, frame, max_cards: int = 8) -> list[tuple[float, float]]:
+        """Centers of the filled troop cards, left to right.
+
+        Without a calibrated troop bar, the first `max_cards` fixed layout slots.
+        """
+        bar = self.rois.get("troop_bar")
+        if not bar or frame is None:
+            return [layout.troop_slot(i) for i in range(max_cards)]
+        h, w = frame.shape[:2]
+        cards = []
+        for i in range(bar["slots"]):
+            cx, cy = bar["first_x"] + i * bar["step_x"], bar["y"]
+            x0, x1 = int((cx - bar["half_w"]) * w), int((cx + bar["half_w"]) * w)
+            y0, y1 = int((cy - bar["half_h"]) * h), int((cy + bar["half_h"]) * h)
+            patch = frame[max(0, y0):y1, max(0, x0):x1]
+            if patch.size == 0 or patch.std() < bar["min_std"]:
+                break  # cards are packed to the left
+            cards.append((cx, cy))
+        return cards[:max_cards]
+
+    def deploy_points(self, frame, n: int = 24) -> list[tuple[float, float]]:
+        """Points just outside the orange deploy border, around the base.
+
+        The border's convex hull is pushed out by `offset_px`; points on UI or
+        off screen are dropped. Without a calibrated border, the fixed layout line.
+        """
+        cfg = self.rois.get("deploy_border")
+        if not cfg or frame is None:
+            return [layout.red_line_point((k + 0.5) / n) for k in range(n)]
+        import cv2
+        h, w = frame.shape[:2]
+        ui = cfg["ui_masks"]
+        mask = cv2.inRange(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV), tuple(cfg["hsv_low"]), tuple(cfg["hsv_high"]))
+        for x0, y0, x1, y1 in ui:
+            mask[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)] = 0
+        ys, xs = np.nonzero(mask)
+        if len(xs) < 200:
+            return []
+        hull = cv2.convexHull(np.stack([xs, ys], 1).astype(np.int32)).reshape(-1, 2).astype(float)
+        center = hull.mean(0)
+        seg = np.roll(hull, -1, 0) - hull
+        lens = np.hypot(seg[:, 0], seg[:, 1])
+        ends = np.cumsum(lens)
+        points = []
+        for k in range(n):
+            d = (k + 0.5) / n * ends[-1]
+            i = min(int(np.searchsorted(ends, d)), len(hull) - 1)
+            p = hull[i] + (d - (ends[i] - lens[i])) / max(lens[i], 1e-6) * seg[i]
+            out = p - center
+            x, y = p + out / max(np.hypot(*out), 1e-6) * cfg["offset_px"]
+            if not (8 <= x < w - 8 and 8 <= y < h - 8):
+                continue
+            rx, ry = x / w, y / h
+            if any(x0 <= rx <= x1 and y0 <= ry <= y1 for x0, y0, x1, y1 in ui):
+                continue
+            if cv2.pointPolygonTest(hull.astype(np.float32), (float(x), float(y)), False) >= 0:
+                continue
+            points.append((rx, ry))
+        return points
+
     def star_bonus_popup(self, frame) -> bool:
         return frame is not None and _pixel_close(frame, layout.STAR_BONUS_PROBE,
                                                   layout.STAR_BONUS_BGR, layout.STAR_BONUS_TOL)

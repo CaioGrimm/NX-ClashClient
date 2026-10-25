@@ -11,7 +11,8 @@ PROFILES_DIR = Path("profiles")
 
 MODES = {"farm"}
 OCR_ENGINES = {"rapid", "tesseract", "glm"}
-DEPLOY_MODES = {"edge", "none"}
+# "test": drop one troop, then only record the battle and end screens (no taps after the drop).
+DEPLOY_MODES = {"edge", "none", "test"}
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 _WINDOW_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$")

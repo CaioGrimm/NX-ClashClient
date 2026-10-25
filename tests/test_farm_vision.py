@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from src.farm import layout
 from src.farm import vision as fv
 from src.farm.vision import FrameVision, load_rois_for
 
@@ -97,3 +98,54 @@ def test_ldplayer_screenshot(name):
     if tuple(int(n) for n in version("rapidocr_onnxruntime").split(".")[:2]) < (1, 4):
         pytest.skip("rapidocr_onnxruntime < 1.4 (the last release for Python 3.13) reads nothing on these crops")
     assert (v.read_home(frame) if home else v.read_enemy(frame)) == values
+
+
+def test_troop_cards_and_deploy_fallbacks_without_calibration():
+    v = FrameVision({})
+    frame = np.zeros((720, 1280, 3), np.uint8)
+    assert v.troop_cards(frame, 3) == [layout.troop_slot(i) for i in range(3)]
+    assert len(v.deploy_points(frame, 10)) == 10
+
+
+def test_troop_cards_stop_at_first_empty_slot():
+    v = FrameVision(LD_ROIS)
+    bar = LD_ROIS["troop_bar"]
+    frame = np.zeros((720, 1280, 3), np.uint8)
+    rng = np.random.default_rng(0)
+    for i in range(2):
+        cx = int((bar["first_x"] + i * bar["step_x"]) * 1280)
+        frame[590:710, cx - 30:cx + 30] = rng.integers(0, 255, (120, 60, 3), dtype=np.uint8)
+    cards = v.troop_cards(frame)
+    assert cards == [pytest.approx((bar["first_x"] + i * bar["step_x"], bar["y"])) for i in range(2)]
+    assert v.troop_cards(frame, max_cards=1) == cards[:1]
+
+
+def test_deploy_points_outside_drawn_border():
+    cv2 = pytest.importorskip("cv2")
+    v = FrameVision(LD_ROIS)
+    frame = np.full((720, 1280, 3), (40, 160, 90), np.uint8)  # grass
+    diamond = np.array([[640, 120], [960, 330], [640, 540], [320, 330]], np.int32)
+    cv2.polylines(frame, [diamond], True, (45, 115, 193), 3)  # border orange (BGR)
+    points = v.deploy_points(frame)
+    assert len(points) >= 12
+    for x, y in points:
+        assert cv2.pointPolygonTest(diamond.astype(np.float32), (x * 1280, y * 720), True) < -10
+
+
+@pytest.mark.parametrize("name", ["ld_search_1.png", "ld_search_2.png", "ld_search_3.png"])
+def test_deploy_targets_on_real_bases(name):
+    path = LD_SHOT.parent / name
+    if not path.exists():
+        pytest.skip(f"{path} not present")
+    cv2 = pytest.importorskip("cv2")
+    frame = cv2.imread(str(path))
+    v = FrameVision(LD_ROIS)
+    bar = LD_ROIS["troop_bar"]
+    assert v.troop_cards(frame) == [pytest.approx((bar["first_x"] + i * bar["step_x"], bar["y"])) for i in range(2)]
+    points = v.deploy_points(frame)
+    assert len(points) >= 8
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    for x, y in points:
+        px, py = int(x * 1280), int(y * 720)
+        assert py < 0.8 * 720  # never on the troop bar
+        assert not (hsv[py, px, 0] == 14 and hsv[py, px, 1] > 160)  # not on the border itself

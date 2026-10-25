@@ -54,9 +54,9 @@ DEPLOYMENT_SEGMENTS = (
 )
 
 # "standard" troop bar: one row of cards.
-TROOP_BAR_Y = 0.864
-TROOP_BAR_FIRST_X = 0.281
-TROOP_BAR_STEP_X = 0.050
+TROOP_BAR_Y = 0.903
+TROOP_BAR_FIRST_X = 0.1203
+TROOP_BAR_STEP_X = 0.0757
 
 
 def troop_slot(index: int) -> tuple[float, float]:

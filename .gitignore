@@ -220,3 +220,5 @@ __marimo__/
 # Farm: per-account profiles and local emulator screenshots
 profiles/
 tests/fixtures/ldplayer/
+
+captures/

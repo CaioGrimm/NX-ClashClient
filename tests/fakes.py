@@ -121,6 +121,12 @@ class FakeVision:
     def read_home(self, f):
         return dict(self.home)
 
+    def troop_cards(self, f, max_cards=8):
+        return [layout.troop_slot(i) for i in range(max_cards)]
+
+    def deploy_points(self, f, n=24):
+        return [layout.red_line_point((k + 0.5) / n) for k in range(n)]
+
     def read_enemy(self, f):
         if self.enemy_loot:
             return self.enemy_loot.pop(0)
