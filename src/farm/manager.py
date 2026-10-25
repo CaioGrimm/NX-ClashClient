@@ -80,6 +80,19 @@ class SessionManager:
         except (FileNotFoundError, OSError):
             return []
 
+    @staticmethod
+    def create_instance(name: str, copy_from: int | None = None, ldconsole: str | None = None) -> dict:
+        """New LDPlayer instance at 1280x720 DPI 240 with ADB on; returns it like scan() does."""
+        from src.emulators.ldplayer import DEFAULT_LDCONSOLE, LDPlayer
+        i = LDPlayer(ldconsole or DEFAULT_LDCONSOLE).create_instance(name, copy_from)
+        return {"index": i.index, "title": i.title, "running": i.running, "serial": i.adb_serial(),
+                "size": (i.width, i.height), "dpi": i.dpi}
+
+    @staticmethod
+    def launch_instances(indices, interval: float = 30.0, ldconsole: str | None = None) -> list[int]:
+        from src.emulators.ldplayer import DEFAULT_LDCONSOLE, LDPlayer
+        return LDPlayer(ldconsole or DEFAULT_LDCONSOLE).launch_staggered(indices, interval)
+
     # ---- lifecycle -------------------------------------------------------
 
     def is_running(self, name: str) -> bool:

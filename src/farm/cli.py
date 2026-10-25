@@ -74,6 +74,17 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--dry-run", action="store_true",
                     help="read home resources (or the enemy loot on the search screen) and stop, never tap")
 
+    ins = sub.add_parser("instances", help="create or launch LDPlayer instances")
+    isub = ins.add_subparsers(dest="action", required=True)
+    inew = isub.add_parser("new", help="new instance at 1280x720 DPI 240 with ADB on")
+    inew.add_argument("name")
+    inew.add_argument("--copy-from", type=int, help="copy this instance instead of creating an empty one")
+    inew.add_argument("--ldconsole")
+    ilaunch = isub.add_parser("launch", help="launch stopped instances one by one")
+    ilaunch.add_argument("indices", type=int, nargs="+")
+    ilaunch.add_argument("--interval", type=float, default=30.0, help="seconds between launches")
+    ilaunch.add_argument("--ldconsole")
+
     cap = sub.add_parser("capture", help="save a screenshot from a profile's device")
     cap.add_argument("profile")
     cap.add_argument("--out", required=True)
@@ -226,6 +237,19 @@ def cmd_start(args, out, device_factory=make_adb_device, vision_factory=None, ti
     return 0
 
 
+def cmd_instances(args, out, **_):
+    if args.action == "new":
+        d = SessionManager.create_instance(args.name, args.copy_from, args.ldconsole)
+        w, h = d["size"]
+        print(f"Created [{d['index']}] {d['title']} {w}x{h}@{d['dpi']}  {d['serial']}", file=out)
+        print(f"Next: launch it, install/log in to Clash of Clans, then "
+              f"`profiles new <name> --index {d['index']}`.", file=out)
+        return 0
+    launched = SessionManager.launch_instances(args.indices, args.interval, args.ldconsole)
+    print(f"Launched {launched or 'nothing (already running)'}", file=out)
+    return 0
+
+
 def cmd_capture(args, out, device_factory=make_adb_device, **_):
     import cv2
     p = _load(args, args.profile)
@@ -241,7 +265,8 @@ def cmd_capture(args, out, device_factory=make_adb_device, **_):
     return 0
 
 
-COMMANDS = {"scan": cmd_scan, "profiles": cmd_profiles, "start": cmd_start, "capture": cmd_capture}
+COMMANDS = {"scan": cmd_scan, "profiles": cmd_profiles, "start": cmd_start, "capture": cmd_capture,
+            "instances": cmd_instances}
 
 
 def main(argv=None, out=None, **deps) -> int:

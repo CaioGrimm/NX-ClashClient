@@ -1,5 +1,7 @@
+import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 
 _LDCONSOLE_CANDIDATES = [
@@ -22,6 +24,9 @@ def find_ldconsole() -> str:
 
 DEFAULT_LDCONSOLE = find_ldconsole()
 BASE_ADB_PORT = 5555
+# What the bot expects: landscape 1280x720 at DPI 240, ADB on (2 = what LDPlayer 9 writes for "local").
+FARM_RESOLUTION = (1280, 720, 240)
+ADB_DEBUG_LOCAL = 2
 
 
 def adb_port(index: int) -> int:
@@ -121,3 +126,51 @@ class LDPlayer:
 
     def serial(self, index: int) -> str:
         return adb_serial(index, self.adb_host)
+
+    # ---- instance management ---------------------------------------------
+
+    def config_path(self, index: int) -> str:
+        return os.path.join(os.path.dirname(self.ldconsole), "vms", "config", f"leidian{index}.config")
+
+    def set_resolution(self, index: int, width: int, height: int, dpi: int) -> None:
+        self._run("modify", "--index", str(index), "--resolution", f"{width},{height},{dpi}")
+
+    def set_adb_debug(self, index: int, value: int = ADB_DEBUG_LOCAL) -> None:
+        """ldconsole has no flag for it: write basicSettings.adbDebug in the instance config."""
+        path = self.config_path(index)
+        data = {}
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        data["basicSettings.adbDebug"] = value
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+
+    def create_instance(self, name: str, copy_from: int | None = None,
+                        resolution: tuple[int, int, int] = FARM_RESOLUTION) -> LDInstance:
+        """New instance (empty, or a copy of `copy_from`) set up for the bot. Must not be running."""
+        before = {i.index for i in self.list_instances()}
+        if copy_from is None:
+            self._run("add", "--name", name)
+        else:
+            self._run("copy", "--name", name, "--from", str(copy_from))
+        new = [i for i in self.list_instances() if i.index not in before]
+        if not new:
+            raise RuntimeError(f"ldconsole did not create instance {name!r}")
+        inst = new[0]
+        self.set_resolution(inst.index, *resolution)
+        self.set_adb_debug(inst.index)
+        return next(i for i in self.list_instances() if i.index == inst.index)
+
+    def launch_staggered(self, indices, interval: float = 30.0, sleep=time.sleep) -> list[int]:
+        """Launch the stopped instances one by one, `interval` seconds apart, to spread the boot load."""
+        running = {i.index for i in self.list_instances() if i.running}
+        launched = []
+        for index in indices:
+            if index in running:
+                continue
+            if launched:
+                sleep(interval)
+            self.launch(index)
+            launched.append(index)
+        return launched

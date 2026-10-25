@@ -164,6 +164,8 @@ class FarmApp(tk.Tk):
         top = ttk.Frame(tab)
         top.pack(fill="x", pady=8)
         ttk.Button(top, text="Scan Emulators", command=self.scan).pack(side="left")
+        ttk.Button(top, text="New Instance", command=self.new_instance).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Launch Instances", command=self.launch_instances).pack(side="left", padx=6)
         ttk.Button(top, text="Start All Enabled", style="Green.TButton", command=self.start_all).pack(side="left", padx=6)
         ttk.Button(top, text="Stop All", style="Red.TButton", command=self.stop_all).pack(side="left")
         ttk.Label(top, text="  Max loops (0 = no limit):").pack(side="left")
@@ -246,6 +248,31 @@ class FarmApp(tk.Tk):
         p = self.mgr.profiles[name]
         p.enabled = value
         p.save(self.profiles_dir)
+
+    def new_instance(self):
+        from tkinter import simpledialog
+        name = simpledialog.askstring("New LDPlayer instance", "Instance name:", parent=self)
+        if not name:
+            return
+        copy = messagebox.askyesno("New LDPlayer instance",
+                                   "Copy instance 0 (with its apps)?\nNo = empty instance (install Clash of Clans there).")
+        try:
+            d = self.mgr.create_instance(name, 0 if copy else None)
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            messagebox.showerror("New LDPlayer instance", str(e))
+            return
+        messagebox.showinfo("New LDPlayer instance",
+                            f"Created [{d['index']}] {d['title']} ({d['serial']}).\n"
+                            f"Launch it, log in to the account, then create a profile with index {d['index']}.")
+        self.scan()
+
+    def launch_instances(self):
+        """Launch the instances of enabled profiles, 30 s apart, without freezing the window."""
+        import threading
+        indices = sorted({p.emulator_index for p in self.mgr.profiles.values()
+                          if p.enabled and p.emulator_index is not None})
+        threading.Thread(target=self.mgr.launch_instances, args=(indices, 30.0), daemon=True).start()
+        self.mgr.logs.append((time.time(), "-", "info", f"launching instances {indices}, 30 s apart"))
 
     def scan(self):
         found = self.mgr.scan()
