@@ -81,6 +81,7 @@ SHOTS = {
     "ld_end_defeat.png": ("end", None),
     "ld_end_victory.png": ("end", None),
     "ld_army.png": ("other", None),
+    "ld_reload_popup.png": ("reload", None),
     "ld_battle_menu.png": ("other", None),
 }
 
@@ -99,6 +100,7 @@ def test_ldplayer_screenshot(name):
     assert v.match_found(frame) == (screen == "match")
     assert v.is_battle(frame) == (screen in ("match", "battle"))
     assert v.match_ended(frame) == (screen == "end")
+    assert v.reload_popup(frame) == (screen == "reload")
     if values is None:
         return
     pytest.importorskip("rapidocr_onnxruntime")

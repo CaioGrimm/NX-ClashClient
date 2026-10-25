@@ -212,3 +212,20 @@ def test_red_line_point_endpoints():
     for t in (0.1, 0.3, 0.5, 0.7, 0.9):
         x, y = layout.red_line_point(t)
         assert 0 <= x <= 1 and 0 <= y <= 1
+
+
+def test_reload_popup_taps_reload_and_recovers():
+    class ReloadVision(FakeVision):
+        def __init__(self):
+            super().__init__()
+            self.popup = True
+
+        def reload_popup(self, f):
+            return self.popup
+
+    dev = FakeDevice(screen="unknown")
+    vision = ReloadVision()
+    w, _ = make(device=dev, vision=vision)
+    assert w.on_recover() == State.RECOVER
+    reload_btn = layout.RELOAD_GAME_BUTTON
+    assert dev.taps == [(reload_btn["x"], reload_btn["y"])] and dev.keys == []

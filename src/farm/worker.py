@@ -488,8 +488,12 @@ class FarmWorker:
             self.sleep(self.t.app_restart_wait)
             return State.RECOVER
 
+        if frame is not None and self.vision.reload_popup(frame):
+            self.log("connection closed for inactivity, reloading the game")
+            self.tap(layout.RELOAD_GAME_BUTTON, self.t.app_restart_wait)
+            return State.RECOVER
         self.log(f"unknown screen, recovery attempt {self.recover_attempts}", "warn")
-        if (frame is not None and self.vision.reload_popup(frame)) or self.recover_attempts > 1:
+        if self.recover_attempts > 1:
             key = getattr(self.device, "key", None)
             if key:
                 key(KEYCODE_ESCAPE)

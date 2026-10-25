@@ -36,6 +36,7 @@ STAR_BONUS_OK_BUTTON = _pt(0.50, 0.83)
 # ── Recovery ──────────────────────────────────────────────────────────
 RECOVERY_DISMISS_BUTTON = _pt(0.990, 0.205)
 RECOVERY_DISMISS_TAPS = 4
+RELOAD_GAME_BUTTON = _pt(0.355, 0.606)  # "RECARREGAR O JOGO" on the inactivity dialog
 
 # ── Pixel probes (point, expected BGR, tolerance) ─────────────────────
 # Both points are pitch black on the end-of-battle stars screen.

@@ -169,6 +169,9 @@ class FrameVision:
                                                   layout.STAR_BONUS_BGR, layout.STAR_BONUS_TOL)
 
     def reload_popup(self, frame) -> bool:
+        probes = self.rois.get("reload_probes")
+        if probes:
+            return frame is not None and all(_probe_ok(frame, p) for p in probes)
         return frame is not None and all(
             _pixel_close(frame, p, layout.RELOAD_POPUP_BGR, layout.RELOAD_POPUP_TOL)
             for p in layout.RELOAD_POPUP_PROBES)
