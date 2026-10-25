@@ -79,6 +79,7 @@ SHOTS = {
     "ld_search_4.png": ("match", {"gold": 55848, "elixir": 74928, "dark": 0}),  # "55" once read as "SS"
     "ld_battle.png": ("battle", None),
     "ld_end_defeat.png": ("end", None),
+    "ld_end_victory.png": ("end", None),
     "ld_army.png": ("other", None),
     "ld_battle_menu.png": ("other", None),
 }
