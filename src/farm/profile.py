@@ -39,6 +39,7 @@ class Profile:
     drops_per_slot: int = 20
     auto_reinforce: bool = False
     session_minutes: int = 0  # 0 = no limit
+    dry_run: bool = False  # read the screen and stop, never tap
     # Daily windows "HH:MM-HH:MM" in local time; empty = always. Windows may wrap midnight.
     schedule: list[str] = field(default_factory=list)
 

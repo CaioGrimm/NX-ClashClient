@@ -13,6 +13,21 @@ from src.farm.profile import Profile
 KEYCODE_ESCAPE = 111
 
 
+class DryRunDevice:
+    """Wraps a Device for dry runs: reads go through, every input is dropped and counted."""
+
+    _INPUTS = ("tap", "tap_roi", "swipe", "key", "start_app", "stop_app")
+
+    def __init__(self, device):
+        self._device = device
+        self.blocked: list[tuple] = []
+
+    def __getattr__(self, name):
+        if name in self._INPUTS:
+            return lambda *a, **k: self.blocked.append((name, *a))
+        return getattr(self._device, name)
+
+
 class State(str, enum.Enum):
     HOME = "HOME"
     CHECK_RESOURCES = "CHECK_RESOURCES"
@@ -51,9 +66,12 @@ class FarmWorker:
 
     def __init__(self, profile: Profile, device: Device, log_queue=None, vision=None,
                  stop_event=None, timings: Timings | None = None, clock=time.monotonic,
-                 max_recover_attempts: int = 3, max_app_restarts: int = 2, max_loops: int | None = None):
+                 max_recover_attempts: int = 3, max_app_restarts: int = 2, max_loops: int | None = None,
+                 dry_run: bool | None = None):
         self.profile = profile
-        self.device = device
+        self.dry_run = profile.dry_run if dry_run is None else dry_run
+        # Belt and braces: the dry-run states never tap, and the wrapper drops any input anyway.
+        self.device = DryRunDevice(device) if self.dry_run else device
         self.log_queue = log_queue
         self.vision = vision if vision is not None else self._default_vision(profile, device)
         self.stop_event = stop_event or threading.Event()
@@ -206,6 +224,8 @@ class FarmWorker:
             return State.RECOVER
         self.resources = self.vision.read_home(frame)
         self.log(f"home resources {self.resources}")
+        if self.dry_run:
+            return self.finish("dry run: resources read")
         return State.SEARCH
 
     def on_search(self) -> State:
@@ -223,6 +243,13 @@ class FarmWorker:
         return State.EVALUATE
 
     def on_evaluate(self) -> State:
+        if self.dry_run:
+            frame = self.device.capture()
+            if frame is None or not self.vision.match_found(frame):
+                return self.finish("dry run: no match on screen")
+            self.last_loot = self.vision.read_enemy(frame)
+            self.log(f"enemy loot {self.last_loot}")
+            return self.finish("dry run: loot read")
         deadline = self.clock() + self.t.search_timeout
         frame = None
         while not self.stopping:
@@ -307,6 +334,13 @@ class FarmWorker:
 
     def on_recover(self) -> State:
         frame = self.device.capture()
+        if self.dry_run:
+            # Only states that read without input; recovery would tap.
+            if frame is not None and self.vision.is_home(frame):
+                return State.CHECK_RESOURCES
+            if frame is not None and self.vision.match_found(frame):
+                return State.EVALUATE
+            return self.finish("dry run: not on home or search screen")
         if frame is not None:
             if self.vision.is_home(frame):
                 self.recover_attempts = 0

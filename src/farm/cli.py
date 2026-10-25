@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     new.add_argument("--session-minutes", type=int, default=0)
     new.add_argument("--schedule", action="append", default=[], metavar="HH:MM-HH:MM")
     new.add_argument("--disabled", action="store_true")
+    new.add_argument("--dry-run", action="store_true", help="read resources and stop, never tap")
     new.add_argument("--force", action="store_true", help="overwrite an existing profile")
     for action in ("show", "enable", "disable"):
         psub.add_parser(action).add_argument("name")
@@ -62,6 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
     which.add_argument("--all", action="store_true", help="every enabled profile")
     st.add_argument("--refresh", type=float, default=1.0, help="table refresh interval (s)")
     st.add_argument("--max-loops", type=int, help="stop each worker after N farm loops")
+    st.add_argument("--dry-run", action="store_true",
+                    help="read home resources (or the enemy loot on the search screen) and stop, never tap")
 
     cap = sub.add_parser("capture", help="save a screenshot from a profile's device")
     cap.add_argument("profile")
@@ -139,7 +142,7 @@ def cmd_profiles(args, out, **_):
                     emulator_index=args.emulator_index, adb_serial=args.adb_serial, adb_host=args.adb_host,
                     ocr_engine=args.ocr_engine, min_gold=args.min_gold, min_elixir=args.min_elixir,
                     min_dark=args.min_dark, deploy_mode=args.deploy_mode, auto_reinforce=args.auto_reinforce,
-                    session_minutes=args.session_minutes, schedule=args.schedule)
+                    session_minutes=args.session_minutes, schedule=args.schedule, dry_run=args.dry_run)
         print(f"Saved {p.save(args.profiles_dir)}", file=out)
         return 0
 
@@ -161,6 +164,8 @@ def cmd_profiles(args, out, **_):
 
 def cmd_start(args, out, device_factory=make_adb_device, vision_factory=None, timings=None, **_):
     worker_kwargs = {"max_loops": args.max_loops} if args.max_loops is not None else {}
+    if args.dry_run:
+        worker_kwargs["dry_run"] = True
     mgr = SessionManager(args.profiles_dir, device_factory=device_factory, vision_factory=vision_factory,
                          timings=timings, worker_kwargs=worker_kwargs)
     mgr.load_profiles()
