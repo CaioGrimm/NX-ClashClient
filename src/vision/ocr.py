@@ -157,8 +157,10 @@ def extract_all_rapid(crops: list[np.ndarray]) -> list[int]:
         try:
             if len(c.shape) == 2: c = cv2.cvtColor(c, cv2.COLOR_GRAY2BGR)
             # Crops are single lines: recognition alone is steadier than the
-            # detector, which misses digits touching the crop border.
-            res, _ = rapid_engine(c, use_det=False, use_cls=False)
+            # detector, which misses digits touching the crop border. Without a
+            # margin the recognizer also reads a leading "5" as "S".
+            padded = cv2.copyMakeBorder(c, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+            res, _ = rapid_engine(padded, use_det=False, use_cls=False)
             cleaned = re.sub(r'\D', '', " ".join([item[0] for item in res])) if res else ""
             if not cleaned:
                 res, _ = rapid_engine(c)

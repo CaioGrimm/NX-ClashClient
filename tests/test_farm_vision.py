@@ -70,6 +70,7 @@ def test_battle_and_match_use_probes():
 # Local only (gitignored), captured on LDPlayer 1280x720: name -> (home?, match?, values read)
 SHOTS = {
     "ld_3.png": (True, False, {"gold": 338, "elixir": 79, "dark": 0}),
+    "ld_home_5449.png": (True, False, {"gold": 5449, "elixir": 5170, "dark": 0}),  # leading 5 once read as S
     "ld_search_1.png": (False, True, {"gold": 1160, "elixir": 2264, "dark": 0}),
     "ld_search_2.png": (False, True, {"gold": 1194, "elixir": 1262, "dark": 0}),
     "ld_search_3.png": (False, True, {"gold": 1154, "elixir": 628, "dark": 0}),
